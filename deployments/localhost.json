@@ -1,0 +1,11 @@
+{
+  "network": "localhost",
+  "chainId": 31337,
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "deployedAt": "2026-10-10T20:11:51.819Z",
+  "contracts": {
+    "creditScoreVerifier": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+    "eligibilityVerifier": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+    "verityManager": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+  }
+}

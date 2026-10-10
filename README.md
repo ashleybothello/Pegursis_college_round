@@ -1,281 +1,357 @@
 # Verity Finance
 
-Verity Finance is a privacy-preserving financial computation verification
-platform. Financial institutions increasingly outsource computations such as
-credit scoring, loan assessment, fraud-risk scoring, and payment settlement.
-Verity Finance lets a verifier confirm that such a computation followed an
-approved set of rules **without** needing access to the underlying sensitive
-financial data, by combining zero-knowledge proofs with blockchain-based
-auditability.
+Verity Finance is a privacy-preserving financial computation demonstrator. It turns bounded private credit features into a genuine Circom/Groth16 proof, verifies that proof off-chain, and records the public outcome through a Solidity verifier and `VerityManager` audit contract.
 
-The current implementation proves a fixed, approved credit-scoring formula.
-A genuine Groth16 proof is generated off-chain and can be verified off-chain or
-on-chain by a generated Solidity verifier; a verifier smart contract can record
-the outcome as an auditable event.
+The experience is designed for a live hackathon demo: a judge can enter private inputs, watch the proof stages resolve, inspect the public task record, and alter the claimed score to see the original proof fail. The formula is a demonstrator, not a validated lending model.
 
-> Status in one line: the zero-knowledge proof step is implemented and tested.
-> The blockchain, backend, and frontend integration steps are not yet built.
+## Current status
+
+| Area | Status | Evidence |
+| --- | --- | --- |
+| Credit-score circuit v1 | Implemented and tested | `circuits/credit_score.circom`, witness/proof/tamper commands |
+| Real Groth16 proving and off-chain verification | Implemented and tested | `backend/tests/unit/zkRealProof.test.ts`, `npm run verify` |
+| Generated Solidity verifier | Implemented and compiled | `contracts/VerityCreditScoreVerifier.sol`, Hardhat compile |
+| `VerityManager` task lifecycle | Implemented and tested | 19 Hardhat tests, duplicate and tamper reverts |
+| Backend API | Implemented and tested | 82 Vitest tests, real-mode service wiring |
+| React frontend | Implemented and production-built | `frontend/`, Vite build and TypeScript check |
+| Real API → proof → local chain flow | Verified locally | `npm run e2e:http` with real + real modes |
+| Public testnet deployment | Planned | Requires a confirmed RPC, deployer, and human-approved network |
+| Production trusted setup / financial model validation | Planned | Outside this hackathon demonstrator |
 
 ## Architecture
 
-Intended end-to-end flow:
+```mermaid
+flowchart LR
+    UI[React + Vite proof desk]
+    API[Express API\nZod validation + status registry]
+    PROVER[snarkjs Groth16\nCircom WASM + zkey]
+    OFF[Off-chain verifier\nverification_key.json]
+    RPC[Hardhat JSON-RPC\nchain 31337]
+    V[Generated Solidity verifier]
+    M[VerityManager\ntasks + events]
+    AUDIT[Public audit record\ntaskId · modelId · result · commitment]
 
-```text
-Private financial inputs
-        │  (never leave the prover/backend trust boundary)
-        ▼
-Backend proof generation            — snarkjs Groth16 over the Circom circuit
-        ▼
-Groth16 proof + public signals
-        ▼
-Off-chain verification              — snarkjs groth16.verify(...)
-        ▼
-Smart-contract verification         — generated verifier called by VerityManager
-        ▼
-Audit record                        — taskId, modelId, commitment, outcome, event
-        ▼
-Frontend status display             — score, model version, verification status
+    UI -->|private inputs over API| API
+    API --> PROVER
+    PROVER -->|proof + public signals| OFF
+    OFF --> API
+    API -->|createTask + submitProof| RPC
+    RPC --> V
+    V --> M
+    M --> AUDIT
+    API -->|status + public fields only| UI
 ```
 
-### Implemented vs. awaiting integration
+### Repository map
 
-| Component | State |
-| --- | --- |
-| Circom credit-scoring circuit and constraints | **Implemented** |
-| Groth16 trusted setup (local demo) and proving key | **Implemented** |
-| Off-chain proof generation + verification | **Implemented** |
-| Tamper test (altered public output fails) | **Implemented** |
-| Exported Solidity verifier | **Exported** (not yet compiled/deployed as a Hardhat project) |
-| `VerityManager` smart contract | **Not started** |
-| Backend proof-generation/verification API | **Not started** |
-| Frontend dashboard | **Not started** |
-| On-chain verification of a proof | **Not done** — requires Persons 2–4 |
+- `circuits/` — authoritative Circom circuits for credit-score v1 and separate eligibility v2.
+- `build/` — committed demo artifacts: WASM, R1CS, proving keys, verification keys, sample proofs, and public signals.
+- `contracts/` — generated Groth16 verifiers and `VerityManager`.
+- `backend/` — TypeScript Express service, ZK proof service, ethers v6 chain service, schemas, and tests.
+- `frontend/` — React/Vite trust-engine experience connected to the backend.
+- `lib/` and `scripts/` — proof formatting, artifact helpers, deployment, ABI export, and E2E scripts.
+- `deployments/` — reviewable ABI files and local deployment output generated by the deploy command.
 
-## Person 1 — ZK Proof Engineer
+## Approved models and public signals
 
-Responsibilities:
-
-- Maintain the Circom credit-scoring circuit (`circuits/credit_score.circom`)
-  and its constraints.
-- Maintain proof generation, off-chain verification, and tamper tests.
-- Export and document the Solidity verifier.
-- Keep the model configuration (`model-config.json`) and public-signal ordering
-  synchronized across Circom, snarkjs, Solidity, and the backend.
-- Support integration debugging.
-- Deliver the verifier, the proving/verification artifacts, and `HANDOFF.md`.
-
-### Approved model (v1)
+### Credit-score v1 — model ID 1
 
 ```text
 score = 300 + 3*paymentHistory + 2*incomeStability + debtHeadroom
 ```
 
-- Private inputs: `paymentHistory`, `incomeStability`, `debtHeadroom` — integers
-  in `[0, 100]` — plus `inputSalt`.
-- Public inputs (exact order):
-  `[claimedScore, modelId, taskId, inputCommitment]`.
-- `modelId` is constrained to `1` inside the circuit.
-- `inputCommitment` is a Poseidon hash over the ordered values documented in
-  `HANDOFF.md`:
-  `Poseidon(paymentHistory, incomeStability, debtHeadroom, inputSalt, taskId, modelId)`.
-
-Worked example:
+Private circuit values are `paymentHistory`, `incomeStability`, `debtHeadroom` in `[0, 100]`, plus a backend-owned `inputSalt`. The public signal order is exact and positional:
 
 ```text
-paymentHistory   = 82
-incomeStability  = 74
-debtHeadroom     = 61
-claimedScore     = 300 + 3*82 + 2*74 + 61 = 755
-modelId          = 1
-taskId           = 42
+[claimedScore, modelId, taskId, inputCommitment]
 ```
 
-### Reproducing the proof
+The Poseidon commitment preimage order is:
 
-Install dependencies and check the tools:
+```text
+[paymentHistory, incomeStability, debtHeadroom, inputSalt, taskId, modelId]
+```
+
+The API retains its original input names and maps them inside the trusted backend:
+
+```text
+repaymentIndex → paymentHistory
+incomeIndex    → incomeStability
+historyIndex   → debtHeadroom
+```
+
+For the approved example `82, 74, 61`, the circuit score is `755`. A proof of arithmetic correctness does not prove that source financial data is truthful, fair, or suitable for a lending decision.
+
+### Eligibility v2 — model ID 2
+
+The separate circuit proves an eligibility bit against threshold `700` with public signals `[eligible, threshold, modelId, taskId, inputCommitment]`. It shares the arithmetic formula but is not cryptographically linked to a credit-score v1 proof. The frontend keeps eligibility distinct from the score demo.
+
+## Prerequisites
+
+- Node.js 18+ and npm 9+.
+- A local Hardhat node for the real chain demo.
+- No Circom binary is required for normal use because the compiled demo artifacts are committed. `npm run compile` is available when circuit artifacts need to be rebuilt.
+
+## Install
+
+From the repository root:
 
 ```powershell
 npm install
-npx circom2 --version
-npx snarkjs --version
+pushd backend; npm install; popd
+pushd frontend; npm install; popd
+copy .env.example .env
 ```
 
-Compile the circuit (writes `build/credit_score.r1cs`,
-`build/credit_score.sym`, and `build/credit_score_js/credit_score.wasm`):
+The root package owns ZK and Hardhat dependencies. `backend/` and `frontend/` intentionally keep separate lockfiles and dependency boundaries.
+
+## Run the frontend and backend
+
+### Fast UI development with mock services
+
+```powershell
+# terminal A
+pushd backend
+npm run dev
+
+# terminal B
+pushd frontend
+npm run dev
+```
+
+Open `http://localhost:5173`. Vite proxies `/api` to `http://localhost:3000`. Mock mode is clearly labeled in the interface and must not be described as cryptographic verification.
+
+### Genuine local proof + chain demo
+
+Start a local chain and deploy the generated verifiers plus manager:
+
+```powershell
+# terminal A
+npx hardhat node
+
+# terminal B
+npx hardhat run scripts/deploy.js --network localhost
+npx hardhat run scripts/export-abi.js
+```
+
+Copy the generated `contracts.verityManager` value from `deployments/localhost.json` into the local `.env`. Set the local Hardhat account key only in `.env`:
+
+```dotenv
+PROOF_MODE=real
+BLOCKCHAIN_MODE=real
+RPC_URL=http://127.0.0.1:8545
+PRIVATE_KEY=<local-hardhat-account-0-key>
+CONTRACT_ADDRESS=<contracts.verityManager-from-deployment>
+CONTRACT_ABI_PATH=deployments/abi/VerityManager.json
+CIRCUIT_WASM_PATH=build/credit_score_js/credit_score.wasm
+CIRCUIT_ZKEY_PATH=build/credit_score_final.zkey
+VERIFICATION_KEY_PATH=build/verification_key.json
+```
+
+Then build and start the real backend and frontend:
+
+```powershell
+# terminal C
+pushd backend; npm run build; npm start
+
+# terminal D
+pushd frontend; npm run dev
+```
+
+The frontend reports `REAL / REAL`, the confirmed transaction hashes, and separate proof/off-chain/on-chain stages. It shows an unavailable state when the backend or node cannot be reached.
+
+## Tests and verification commands
+
+Run the full local checks from the root:
+
+```powershell
+npx hardhat compile
+npx hardhat test                         # real verifier + manager tests
+npm run witness:check
+npm run verify
+npm run tamper
+pushd backend; npm run lint; npm test; npm run build; popd
+pushd frontend; npm run lint; npm run build; popd
+```
+
+The API-level real E2E script expects a running Hardhat node, deployed contracts, and a real-mode backend:
+
+```powershell
+npm run e2e:http
+```
+
+It submits sample inputs, checks `verified`, reads the public task status, rechecks the honest proof off-chain, changes the claimed score from `755` to `756`, and asserts that the tampered public signals fail.
+
+## API contract
+
+All responses use `{ success: true, data }` or `{ success: false, error }`. Private input keys and proof coordinates are redacted from request logs.
+
+### Health
+
+```http
+GET /api/health
+```
+
+Response shape:
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "version": "1.0.0",
+    "proofMode": "real",
+    "blockchainMode": "real"
+  }
+}
+```
+
+### Submit the complete verification workflow
+
+```http
+POST /api/verification/submit
+Content-Type: application/json
+
+{"incomeIndex":74,"repaymentIndex":82,"historyIndex":61}
+```
+
+The backend validates `0..100` integers, owns the salt and task ID, generates a genuine proof, verifies it against the vkey, creates the task, and submits the proof to `VerityManager`. The response contains only public fields:
+
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "<decimal-field-element>",
+    "commitment": "<poseidon-field-element>",
+    "score": 755,
+    "modelVersion": 1,
+    "status": "verified",
+    "stages": {
+      "proofGenerated": true,
+      "offchainVerified": true,
+      "taskCreated": true,
+      "onchainVerified": true
+    },
+    "transactions": {
+      "taskCreationTx": "<transaction-hash>",
+      "proofSubmissionTx": "<transaction-hash>"
+    },
+    "proofMode": "real",
+    "blockchainMode": "real"
+  }
+}
+```
+
+### Status and audit history
+
+```http
+GET /api/verification/:taskId
+GET /api/verification?limit=20
+```
+
+The list is process-local memory in this demonstrator. The chain record and `TaskCreated` / `ProofVerified` events are the durable public layer. Raw financial features are never included.
+
+### Off-chain recheck and tamper test
+
+```http
+POST /api/verification/:taskId/offchain
+Content-Type: application/json
+
+{}
+```
+
+Rechecks the stored proof. To exercise the controlled tamper path:
+
+```json
+{"claimedScore":756}
+```
+
+The honest response is `valid: true`; the altered public score must return `valid: false`. The endpoint does not accept a private input or authorize an on-chain submission.
+
+Other preserved routes are documented in `API.md`: `/api/credit/score`, `/api/emi/calculate`, `/api/fraud/score`, and `/api/settlements/calculate`. The legacy credit endpoint is not the ZK-proven formula.
+
+## Contract deployment and address configuration
+
+`npx hardhat run scripts/deploy.js --network localhost` deploys, in order:
+
+1. `Groth16Verifier` for credit-score v1.
+2. `VerityEligibilityVerifier` for eligibility v2.
+3. `VerityManager(creditScoreVerifier, eligibilityVerifier)`.
+
+The script writes `deployments/localhost.json`; `scripts/export-abi.js` writes `deployments/abi/VerityManager.json` and the verifier ABIs. The manager requires `uint256` field-element task IDs and commitments, not `bytes32`.
+
+`VerityManager` rejects unsupported models, duplicate tasks, mismatched model/task/commitment signals, wrong signal counts, tampered proofs, and duplicate submissions. The generated verifier receives the snarkjs proof with the G2 coordinate swap handled by `lib/proof-format.js` and the backend formatter.
+
+## Circuit commands
+
+Normal proof reproduction uses the committed artifacts:
+
+```powershell
+npm run prove
+npm run witness:check
+npm run verify
+npm run tamper
+npm run calldata
+```
+
+Only regenerate the setup when the circuit changes or the approved trusted setup changes:
 
 ```powershell
 npm run compile
-npx snarkjs r1cs info build/credit_score.r1cs
-```
-
-The committed `build/credit_score_final.zkey` and
-`build/verification_key.json` already come from a Groth16 setup, so the ceremony
-does not need to be repeated to prove or verify. To regenerate it locally:
-
-```powershell
 npm run ptau:new
 npm run ptau:contribute
 npm run ptau:prepare
 npm run setup
 npm run zkey:contribute
 npm run zkey:verify
+npm run export
 ```
 
-> The local ceremony uses documented, single-contributor entropy. It is a demo
-> setup only and is **not** a production-grade multiparty ceremony.
+Do not regenerate proving artifacts as a routine install step.
 
-Generate and verify a proof:
+## Environment template
 
-```powershell
-npm run prove           # witness + Groth16 proof -> build/proof.json, build/public.json
-npm run witness:check   # confirm the witness satisfies the R1CS constraints
-npm run verify          # off-chain verification
+`.env.example` contains placeholders only. Key fields:
+
+```dotenv
+PORT=3000
+NODE_ENV=development
+PROOF_MODE=mock
+BLOCKCHAIN_MODE=mock
+RPC_URL=http://127.0.0.1:8545
+PRIVATE_KEY=
+CONTRACT_ADDRESS=
+CONTRACT_ABI_PATH=deployments/abi/VerityManager.json
+CIRCUIT_WASM_PATH=build/credit_score_js/credit_score.wasm
+CIRCUIT_ZKEY_PATH=build/credit_score_final.zkey
+VERIFICATION_KEY_PATH=build/verification_key.json
 ```
 
-Export the verification key and the Solidity verifier:
+Never put real keys, seed phrases, API tokens, or public-network credentials in Git. The local Hardhat test key is entered manually when running a local real-mode demo; it is not stored in the template.
 
-```powershell
-npm run export          # -> build/verification_key.json, contracts/VerityCreditScoreVerifier.sol
-npm run calldata        # prints ABI-ready calldata for the example proof
-```
+## Troubleshooting
 
-Demonstrate that tampering fails:
-
-```powershell
-npm run tamper
-```
-
-Expected output:
-
-```text
-Honest proof verification: true
-Tampered claimedScore: 756
-Tampered proof verification: false
-```
-
-### Person 1 artifacts
-
-| Path | Purpose |
-| --- | --- |
-| `circuits/credit_score.circom` | Circuit and constraints |
-| `lib/credit-score-prover.js` | Prove/verify helper for the backend |
-| `model-config.json` | Model id, weights, signal ordering |
-| `contracts/VerityCreditScoreVerifier.sol` | Generated Solidity verifier |
-| `build/credit_score_final.zkey` | Groth16 proving key |
-| `build/verification_key.json` | Verification key |
-| `build/credit_score_js/credit_score.wasm` | Witness calculator |
-| `build/proof.json` | Example Groth16 proof |
-| `build/public.json` | Matching public signals |
-| `HANDOFF.md` | Integration notes for Persons 2 and 3 |
-
-## Person 2 — Blockchain Engineer
-
-- Set up and maintain Hardhat.
-- Deploy or integrate `contracts/VerityCreditScoreVerifier.sol`.
-- Implement or update `VerityManager.sol` so it calls the genuine verifier
-  (never a mock).
-- Reject invalid proofs and duplicate task submissions.
-- Validate the approved model ID and the expected public inputs.
-- Record the task id, model id, input commitment, claimed score, and
-  verification outcome as appropriate.
-- Emit an audit event for each successful submission.
-- Share the deployed contract address, ABI, network details, and verification
-  test results with Persons 3 and 4.
-
-Do **not** store private financial inputs on-chain. The contracts should only
-ever see a proof and public signals.
-
-## Person 3 — Backend Engineer
-
-- Integrate `lib/credit-score-prover.js`.
-- Implement the proof-generation and verification API endpoints.
-- Validate inputs and calculate the commitment **server-side** from the approved
-  private inputs.
-- Return the proof, public signals, and verification status in a consistent
-  format.
-- Integrate the blockchain contract using Person 2's ABI and address.
-- Keep private inputs out of public responses and never log sensitive data.
-- Document endpoints, request/response examples, environment variables, and
-  errors.
-- Coordinate the API response contract with Person 4.
-
-Never accept a client-supplied commitment as authoritative.
-
-## Person 4 — Frontend Engineer
-
-- Build the credit-scoring demonstration interface.
-- Connect it to the backend APIs.
-- Show proof-generation progress, claimed score, model version, and verification
-  status.
-- Clearly distinguish off-chain verification from on-chain verification.
-- Display transaction hashes and audit history when available.
-- Provide a clear failed-verification state for tampered or invalid proofs.
-- Avoid displaying private inputs in public audit views and never expose secrets
-  in frontend code.
-
-## Shared integration contract
-
-Public-signal order, exact and mandatory:
-
-```text
-[claimedScore, modelId, taskId, inputCommitment]
-```
-
-- Use the generated verifier's **actual** ABI and signature; do not guess them.
-  The generated contract is named `Groth16Verifier` inside
-  `contracts/VerityCreditScoreVerifier.sol` and exposes:
-  `verifyProof(uint[2] a, uint[2][2] b, uint[2] c, uint[4] input) returns (bool)`.
-- When passing proof data from snarkjs to Solidity, apply the coordinate swap:
-
-  ```js
-  const a = [proof.pi_a[0], proof.pi_a[1]];
-  const b = [
-    [proof.pi_b[0][1], proof.pi_b[0][0]],
-    [proof.pi_b[1][1], proof.pi_b[1][0]],
-  ];
-  const c = [proof.pi_c[0], proof.pi_c[1]];
-  const input = publicSignals; // [claimedScore, modelId, taskId, inputCommitment]
-  ```
-
-- The backend must recompute `inputCommitment` from the private inputs; the
-  contract must reject a proof whose `modelId` is not approved and whose public
-  values do not match the task.
-
-## Current status
-
-Do not mark an item complete without repository or test evidence.
-
-- [x] **Person 1 — local proof tests.** Circuit compiles (402 non-linear
-      constraints, 4 public / 4 private inputs), witness check passes, proof
-      verifies off-chain, and the tamper test returns `true` then `false`.
-      Verified in this release.
-- [ ] **Person 2 — contract deployment and on-chain proof verification.** Not
-      started. Requires a Hardhat project and `VerityManager`.
-- [ ] **Person 3 — backend integration.** Not started.
-- [ ] **Person 4 — frontend integration.** Not started.
-- [ ] **Full end-to-end demo.** Not started (depends on the three items above).
-
-Latest locally re-run results (Person 1):
-
-```text
-compile        : 402 non-linear constraints, 4 public inputs, 4 private inputs
-witness:check  : WITNESS IS CORRECT
-verify         : OK!
-tamper         : Honest = true, Tampered (claimedScore 756) = false
-```
+- **`Unable to connect to Ethereum RPC`** — start `npx hardhat node` and check `RPC_URL`.
+- **`No contract bytecode deployed`** — deploy with the localhost command and set `CONTRACT_ADDRESS` to the manager address, not the verifier address.
+- **Missing WASM/zkey/vkey** — confirm the three `build/` paths and run `npm install`; use mock mode only when explicitly demonstrating the mock path.
+- **Frontend says network unavailable** — start the backend on port 3000, or set `VITE_API_BASE_URL` to the backend origin when not using the Vite proxy.
+- **Duplicate task** — real backend task IDs are backend-generated random field elements. A duplicate revert indicates an external retry or stale local chain; deploy a fresh local node for a clean demo.
+- **`git` shows generated `artifacts/` or `cache/`** — those are intentionally ignored; reviewable ABIs and local addresses live under `deployments/`.
 
 ## Security limitations
 
-- A zero-knowledge proof establishes that the **encoded computation** was
-  performed correctly for the supplied inputs and that the published public
-  values are consistent with it. It does **not** prove that the original
-  financial data is truthful, that the formula is fair, or that the system is
-  production-ready.
-- The score formula is a demonstrator, not a validated credit-scoring model.
-- The demo trusted setup was produced locally with documented entropy. It is
-  **not** equivalent to a production-grade multiparty ceremony; a real
-  deployment needs a documented multi-party ceremony and a pinned final zkey.
-- Do not use the demo keys or setup for real funds or a public financial
-  deployment.
-- On-chain verification of a proof has not yet been performed; until Person 2
-  completes and tests `VerityManager`, treat on-chain status as pending.
+- The private inputs are sent to the configured trusted backend prover. This is privacy-preserving relative to verifiers and the chain, not a trustless client-side proving architecture.
+- Groth16 proves the circuit's encoded formula and public binding; it does not prove the truth of a financial data source, fairness, lending suitability, or regulatory compliance.
+- The shipped `.zkey` and `.ptau` use documented demo entropy and are suitable for a hackathon only. A production deployment requires a properly documented multiparty ceremony, key governance, audits, rate limits, origin restrictions, durable audit storage, and a validated model.
+- Eligibility v2 is a separate capability and is not linked to a credit-score v1 proof merely because it shares a formula or task concept.
+
+## Team responsibilities and handoff
+
+| Person | Responsibility | Verified status |
+| --- | --- | --- |
+| Person 1 — ZK Proof Engineer | Circom constraints, Groth16 artifacts, Poseidon commitment, public-signal order, proof helper, tamper fixtures | Implemented; circuit, witness, off-chain verify, and tamper checks pass |
+| Person 2 — Blockchain Engineer | Hardhat setup, generated verifiers, manager lifecycle, duplicate prevention, events, ABI/deployment handoff | Implemented; genuine manager tests pass, local deployment verified |
+| Person 3 — Backend Engineer | API validation, real proof generation/recheck, ethers integration, status transitions, privacy-safe logging | Implemented; TypeScript, 82 tests, and real local flow verified |
+| Person 4 — Frontend Engineer | React proof desk, responsive states, API integration, public audit view, tamper interaction | Implemented; TypeScript and production build pass |
+
+See `HANDOFF-PERSON2.md`, `API.md`, and `CONTRIBUTING.md` for the shared integration contract. The single source of truth for credit v1 public signals is `[claimedScore, modelId, taskId, inputCommitment]`.

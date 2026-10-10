@@ -1,2 +1,31 @@
 node_modules/
 *.log
+*.zip
+*.tar.gz
+
+# Hardhat / contract layer (Person 2)
+artifacts/
+cache/
+# Setup intermediates are reproducible and not needed to run the committed
+# proving artifacts. Keep the final ptau/zkeys and verification material.
+build/pot12_0000.ptau
+build/pot12_0001.ptau
+build/*_0000.zkey
+# Deployment ABIs and local addresses are reviewable integration artifacts;
+# only secret/private deployment records stay ignored.
+deployments/*.secret.json
+deployments/*.private.json
+.env
+
+# Backend (Person 3)
+backend/node_modules/
+backend/dist/
+backend/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Temp / OS
+.DS_Store
+Thumbs.db
