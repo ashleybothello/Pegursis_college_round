@@ -1,0 +1,35 @@
+{
+  "name": "verity-finance-backend",
+  "version": "1.0.0",
+  "description": "Verity Finance Backend Service - Credit Scoring, Loan, Fraud, Settlement and Groth16 zk-Proof Verification",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.5",
+    "express": "^4.21.2",
+    "morgan": "^1.10.0",
+    "snarkjs": "^0.7.5",
+    "zod": "^3.24.2",
+    "circomlibjs": "^0.1.7"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^22.13.5",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

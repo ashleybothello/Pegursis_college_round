@@ -1,0 +1,42 @@
+{
+  "name": "verity-finance-zk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimum viable Circom/Groth16 proof for Verity Finance credit scoring",
+  "scripts": {
+    "compile": "node scripts/compile-circuit.js",
+    "ptau:new": "snarkjs powersoftau new bn128 12 build/pot12_0000.ptau -v",
+    "ptau:contribute": "snarkjs powersoftau contribute build/pot12_0000.ptau build/pot12_0001.ptau --name=VerityLocalDemo -e=verity-local-demo-entropy",
+    "ptau:prepare": "snarkjs powersoftau prepare phase2 build/pot12_0001.ptau build/pot12_final.ptau -v",
+    "setup": "snarkjs groth16 setup build/credit_score.r1cs build/pot12_final.ptau build/credit_score_0000.zkey",
+    "zkey:contribute": "snarkjs zkey contribute build/credit_score_0000.zkey build/credit_score_final.zkey --name=VerityLocalDemo -e=verity-zkey-demo-entropy",
+    "zkey:verify": "snarkjs zkey verify build/credit_score.r1cs build/pot12_final.ptau build/credit_score_final.zkey",
+    "export": "snarkjs zkey export verificationkey build/credit_score_final.zkey build/verification_key.json && snarkjs zkey export solidityverifier build/credit_score_final.zkey contracts/VerityCreditScoreVerifier.sol",
+    "prepare-input": "node scripts/prepare-input.js",
+    "witness": "npm run prepare-input && snarkjs wtns calculate build/credit_score_js/credit_score.wasm input.json build/witness.wtns",
+    "witness:check": "snarkjs wtns check build/credit_score.r1cs build/witness.wtns",
+    "prove": "npm run witness && snarkjs groth16 prove build/credit_score_final.zkey build/witness.wtns build/proof.json build/public.json",
+    "verify": "snarkjs groth16 verify build/verification_key.json build/public.json build/proof.json",
+    "tamper": "node scripts/tamper-proof.js",
+    "calldata": "snarkjs zkey export soliditycalldata build/public.json build/proof.json",
+    "hh:compile": "hardhat compile",
+    "hh:node": "hardhat node",
+    "test": "hardhat test",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost"
+  },
+  "dependencies": {
+    "circom2": "0.2.23",
+    "circomlib": "2.0.5",
+    "circomlibjs": "0.1.7",
+    "snarkjs": "0.7.6"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",
+    "@nomicfoundation/hardhat-ethers": "^3.1.3",
+    "chai": "^4.5.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.29.1",
+    "mocha": "^10.8.2"
+  }
+}

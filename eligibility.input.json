@@ -1,0 +1,11 @@
+{
+  "paymentHistory": "82",
+  "incomeStability": "74",
+  "debtHeadroom": "61",
+  "inputSalt": "1234567890123456789012345678901234567890",
+  "eligible": "1",
+  "threshold": "700",
+  "modelId": "2",
+  "taskId": "77",
+  "inputCommitment": "16029442361280808950093914898143081820697614720138050162252185118321676216067"
+}

@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pearl: #f3eee7;
+  --moonglow: #f6f2d8;
+  --silver: #c9d0d8;
+  --storm: #6f7f92;
+  --storm-deep: #4a5868;
+  --ink: #2b3440;
+  --card: #fbf9f5;
+  --verified: #5e8c6a;
+  --rejected: #b5544c;
+  --warning: #c49a45;
+  --pearl-rgb: 243 238 231;
+  --moonglow-rgb: 246 242 216;
+  --silver-rgb: 201 208 216;
+  --storm-rgb: 111 127 146;
+  --storm-deep-rgb: 74 88 104;
+  --ink-rgb: 43 52 64;
+  --card-rgb: 251 249 245;
+  --verified-rgb: 94 140 106;
+  --rejected-rgb: 181 84 76;
+  --warning-rgb: 196 154 69;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--pearl); scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 78% -5%, rgba(246, 242, 216, .7), transparent 27rem),
+    var(--pearl);
+  color: var(--ink);
+  font-family: var(--font-inter), Arial, sans-serif;
+}
+
+button, input, select { font: inherit; }
+
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 3px solid rgba(111, 127, 146, .32);
+  outline-offset: 2px;
+}
+
+::selection { background: var(--moonglow); color: var(--storm-deep); }
+
+@layer components {
+  .card-shell {
+    @apply rounded-card border border-silver/80 bg-card shadow-soft;
+  }
+  .iridescent {
+    background-image: linear-gradient(110deg, rgba(201, 208, 216, .7), rgba(246, 242, 216, .88), rgba(201, 208, 216, .58));
+    background-size: 200% 100%;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[.18em] text-storm-deep/65;
+  }
+  .field-label {
+    @apply mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-storm-deep/75;
+  }
+  .input-control {
+    @apply h-11 w-full rounded-xl border border-silver bg-card px-3 text-sm text-ink transition placeholder:text-storm/60 focus:border-storm focus:outline-none focus:ring-4 focus:ring-storm/10;
+  }
+  .button-primary {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-storm px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-storm-deep disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .button-secondary {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-silver bg-card px-4 text-sm font-semibold text-storm-deep transition hover:border-storm hover:bg-moonglow/40 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}
+
+@media (max-width: 767px) {
+  .mobile-scroll-x { overflow-x: auto; }
+}

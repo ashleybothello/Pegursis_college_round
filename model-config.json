@@ -1,0 +1,28 @@
+{
+  "modelId": 1,
+  "version": "credit-score-v1",
+  "baseScore": 300,
+  "weights": {
+    "paymentHistory": 3,
+    "incomeStability": 2,
+    "debtHeadroom": 1
+  },
+  "featureRange": {
+    "min": 0,
+    "max": 100
+  },
+  "publicSignalOrder": [
+    "claimedScore",
+    "modelId",
+    "taskId",
+    "inputCommitment"
+  ],
+  "commitmentOrder": [
+    "paymentHistory",
+    "incomeStability",
+    "debtHeadroom",
+    "inputSalt",
+    "taskId",
+    "modelId"
+  ]
+}
